@@ -4,6 +4,7 @@ const { loadLocalEnv } = require('./env');
 const { buildReportContractFromPayload } = require('./roi');
 const { generateBusinessCaseReport } = require('./report-llm');
 const { buildBusinessCasePdf } = require('./report-pdf');
+const { buildHardcodedGrantsResponse } = require('./grants-catalog');
 
 loadLocalEnv();
 
@@ -165,38 +166,6 @@ async function buildReportFromPayload(payload) {
     return { contract, reportText };
 }
 
-function buildPlaceholderGrants(queryParams) {
-    return {
-        generatedAt: new Date().toISOString(),
-        filtersReceived: {
-            industry: queryParams.get('industry') || null,
-            country: queryParams.get('country') || null,
-            region: queryParams.get('region') || null,
-            companySize: queryParams.get('companySize') || null
-        },
-        grants: [
-            {
-                id: 'placeholder-grant-1',
-                name: 'Automation Modernization Grant',
-                provider: 'National Innovation Office',
-                summary: 'Covers part of equipment and integration costs for technology adoption.',
-                maxAmount: 50000,
-                currency: 'USD',
-                status: 'placeholder'
-            },
-            {
-                id: 'placeholder-grant-2',
-                name: 'AI Adoption Voucher',
-                provider: 'Regional Digital Agency',
-                summary: 'Supports pilot projects using AI to improve productivity in SMEs.',
-                maxAmount: 15000,
-                currency: 'USD',
-                status: 'placeholder'
-            }
-        ]
-    };
-}
-
 const server = http.createServer(async (request, response) => {
     const requestUrl = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`);
     const { pathname, searchParams } = requestUrl;
@@ -259,7 +228,7 @@ const server = http.createServer(async (request, response) => {
     }
 
     if (method === 'GET' && pathname === '/api/grants') {
-        sendJson(response, 200, buildPlaceholderGrants(searchParams));
+        sendJson(response, 200, buildHardcodedGrantsResponse(searchParams));
         return;
     }
 

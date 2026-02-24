@@ -4,7 +4,7 @@ Node.js backend service for ROI reporting:
 
 - `POST /api/reports/pdf` - builds ROI contract from calculator input/output, calls ChatGPT, returns PDF
 - `POST /api/reports/preview` - same flow, returns JSON report text for easier backend-only testing
-- `GET /api/grants` - placeholder grants data
+- `GET /api/grants` - hardcoded Canada/Manitoba grants catalog
 
 ## Run
 
@@ -81,3 +81,13 @@ Preview text only (no PDF):
 ```bash
 npm run test:report:preview
 ```
+
+## Hardcoded Grants Catalog
+
+`GET /api/grants` now returns a backend constant list of Canada + Manitoba programs (no live web search at request time).
+
+Optional query filters:
+
+- `country` (e.g. `CA`)
+- `region` (e.g. `MB` or `Federal`)
+- `industry` (simple text match)
