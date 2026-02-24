@@ -10,22 +10,35 @@ loadLocalEnv();
 
 const PORT = Number(process.env.PORT || 4000);
 const MAX_BODY_SIZE_BYTES = 1_000_000;
+const ALLOWED_ORIGINS = new Set(['https://auto-roi-calculator.netlify.app']);
 
-function applyCors(response) {
-    response.setHeader('Access-Control-Allow-Origin', '*');
+function normalizeOrigin(origin) {
+    return String(origin || '').replace(/\/+$/, '');
+}
+
+function applyCors(request, response) {
+    const originHeader = request.headers.origin;
+    const origin = normalizeOrigin(originHeader);
+    const isAllowedOrigin = origin && ALLOWED_ORIGINS.has(origin);
+
+    if (isAllowedOrigin) {
+        response.setHeader('Access-Control-Allow-Origin', origin);
+        response.setHeader('Vary', 'Origin');
+    }
+
     response.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
     response.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 }
 
-function sendJson(response, statusCode, data) {
-    applyCors(response);
+function sendJson(request, response, statusCode, data) {
+    applyCors(request, response);
     response.statusCode = statusCode;
     response.setHeader('Content-Type', 'application/json; charset=utf-8');
     response.end(JSON.stringify(data));
 }
 
-function sendPdf(response, pdfBuffer, filename) {
-    applyCors(response);
+function sendPdf(request, response, pdfBuffer, filename) {
+    applyCors(request, response);
     response.statusCode = 200;
     response.setHeader('Content-Type', 'application/pdf');
     response.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -172,14 +185,14 @@ const server = http.createServer(async (request, response) => {
     const method = request.method || 'GET';
 
     if (method === 'OPTIONS') {
-        applyCors(response);
+        applyCors(request, response);
         response.statusCode = 204;
         response.end();
         return;
     }
 
     if (method === 'GET' && pathname === '/health') {
-        sendJson(response, 200, { status: 'ok', service: 'backend-roi-calculator' });
+        sendJson(request, response, 200, { status: 'ok', service: 'backend-roi-calculator' });
         return;
     }
 
@@ -189,12 +202,12 @@ const server = http.createServer(async (request, response) => {
             const { contract, reportText } = await buildReportFromPayload(payload);
             const pdfBuffer = buildBusinessCasePdf(reportText, contract.companyName);
             const filename = buildReportFilename(contract.companyName);
-            sendPdf(response, pdfBuffer, filename);
+            sendPdf(request, response, pdfBuffer, filename);
             return;
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Unknown error';
             const statusCode = mapErrorToStatusCode(message);
-            sendJson(response, statusCode, {
+            sendJson(request, response, statusCode, {
                 error: message,
                 details: error && typeof error === 'object' && 'details' in error ? error.details : undefined,
                 contractHint: statusCode === 400 ? getContractHint() : undefined
@@ -208,7 +221,7 @@ const server = http.createServer(async (request, response) => {
             const payload = await parseJsonBody(request, MAX_BODY_SIZE_BYTES);
             const { contract, reportText } = await buildReportFromPayload(payload);
 
-            sendJson(response, 200, {
+            sendJson(request, response, 200, {
                 companyName: contract.companyName,
                 calculationInput: contract.calculationInput,
                 calculationResult: contract.calculationResult,
@@ -218,7 +231,7 @@ const server = http.createServer(async (request, response) => {
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Unknown error';
             const statusCode = mapErrorToStatusCode(message);
-            sendJson(response, statusCode, {
+            sendJson(request, response, statusCode, {
                 error: message,
                 details: error && typeof error === 'object' && 'details' in error ? error.details : undefined,
                 contractHint: statusCode === 400 ? getContractHint() : undefined
@@ -228,11 +241,11 @@ const server = http.createServer(async (request, response) => {
     }
 
     if (method === 'GET' && pathname === '/api/grants') {
-        sendJson(response, 200, buildHardcodedGrantsResponse(searchParams));
+        sendJson(request, response, 200, buildHardcodedGrantsResponse(searchParams));
         return;
     }
 
-    sendJson(response, 404, {
+    sendJson(request, response, 404, {
         error: 'Not Found',
         message:
             'Available endpoints: GET /health, POST /api/reports/pdf, POST /api/reports/preview, GET /api/grants'
