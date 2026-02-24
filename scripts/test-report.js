@@ -5,7 +5,6 @@ const { spawn } = require('node:child_process');
 const projectRoot = path.resolve(__dirname, '..');
 const DEFAULT_PORT = Number(process.env.TEST_REPORT_PORT || 4107);
 const DEFAULT_PAYLOAD = path.join(projectRoot, 'examples', 'report-request.json');
-const DEFAULT_OUTPUT = path.join(projectRoot, 'tmp', 'roi-business-case-report.pdf');
 
 function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -17,7 +16,7 @@ function parseArgs() {
         mock: false,
         preview: false,
         payloadPath: DEFAULT_PAYLOAD,
-        outputPath: DEFAULT_OUTPUT
+        outputPath: undefined
     };
 
     for (let index = 0; index < args.length; index += 1) {
@@ -46,6 +45,24 @@ function parseArgs() {
     }
 
     return parsed;
+}
+
+function extractFilenameFromContentDisposition(contentDisposition) {
+    if (!contentDisposition) {
+        return null;
+    }
+
+    const quotedMatch = contentDisposition.match(/filename="([^"]+)"/i);
+    if (quotedMatch && quotedMatch[1]) {
+        return quotedMatch[1];
+    }
+
+    const plainMatch = contentDisposition.match(/filename=([^;]+)/i);
+    if (plainMatch && plainMatch[1]) {
+        return plainMatch[1].trim();
+    }
+
+    return null;
 }
 
 async function waitForHealth(baseUrl, timeoutMs = 12000) {
@@ -127,10 +144,15 @@ async function callPdf(baseUrl, payload, outputPath) {
         throw new Error(`PDF generation failed (${response.status}): ${bodyText}`);
     }
 
+    const contentDisposition = response.headers.get('content-disposition');
+    const responseFilename = extractFilenameFromContentDisposition(contentDisposition);
+    const resolvedOutputPath =
+        outputPath || path.join(projectRoot, 'tmp', responseFilename || 'roi-business-case-report.pdf');
+
     const bytes = Buffer.from(await response.arrayBuffer());
-    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-    fs.writeFileSync(outputPath, bytes);
-    console.log(`\nPDF written to ${outputPath}`);
+    fs.mkdirSync(path.dirname(resolvedOutputPath), { recursive: true });
+    fs.writeFileSync(resolvedOutputPath, bytes);
+    console.log(`\nPDF written to ${resolvedOutputPath}`);
 }
 
 async function main() {

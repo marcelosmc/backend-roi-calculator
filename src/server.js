@@ -92,6 +92,39 @@ function mapErrorToStatusCode(message) {
     return 500;
 }
 
+function pad2(value) {
+    return String(value).padStart(2, '0');
+}
+
+function formatTimestampForReportFilename(date) {
+    return [
+        date.getFullYear(),
+        '-',
+        pad2(date.getMonth() + 1),
+        '-',
+        pad2(date.getDate()),
+        '-',
+        pad2(date.getHours()),
+        ':',
+        pad2(date.getMinutes())
+    ].join('');
+}
+
+function sanitizeCompanyNameForFilename(companyName) {
+    const normalized = String(companyName || '')
+        .trim()
+        .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '-')
+        .replace(/\s+/g, ' ');
+
+    return normalized || 'company';
+}
+
+function buildReportFilename(companyName) {
+    const timestamp = formatTimestampForReportFilename(new Date());
+    const safeCompanyName = sanitizeCompanyNameForFilename(companyName);
+    return `${timestamp}-${safeCompanyName}.pdf`;
+}
+
 function getContractHint() {
     return {
         acceptedInputShapes: [
@@ -184,7 +217,8 @@ const server = http.createServer(async (request, response) => {
             const payload = await parseJsonBody(request, MAX_BODY_SIZE_BYTES);
             const { contract, reportText } = await buildReportFromPayload(payload);
             const pdfBuffer = buildBusinessCasePdf(reportText, contract.companyName);
-            sendPdf(response, pdfBuffer, 'roi-business-case-report.pdf');
+            const filename = buildReportFilename(contract.companyName);
+            sendPdf(response, pdfBuffer, filename);
             return;
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Unknown error';

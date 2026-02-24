@@ -58,6 +58,7 @@ Required MVP fields:
 Company name is currently hardcoded in report generation as:
 
 - `Southern Manitoba Tech Conference`
+- Returned download filename format: `YYYY-MM-DD-HH:MM-companyName.pdf`
 
 ## Test Without Frontend
 
