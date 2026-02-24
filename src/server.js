@@ -1,5 +1,11 @@
 const http = require('node:http');
 const { URL } = require('node:url');
+const { loadLocalEnv } = require('./env');
+const { buildReportContractFromPayload } = require('./roi');
+const { generateBusinessCaseReport } = require('./report-llm');
+const { buildBusinessCasePdf } = require('./report-pdf');
+
+loadLocalEnv();
 
 const PORT = Number(process.env.PORT || 4000);
 const MAX_BODY_SIZE_BYTES = 1_000_000;
@@ -62,65 +68,66 @@ function parseJsonBody(request, maxBytes) {
     });
 }
 
-function escapePdfText(value) {
-    return String(value)
-        .replace(/\\/g, '\\\\')
-        .replace(/\(/g, '\\(')
-        .replace(/\)/g, '\\)');
-}
-
-function buildSimplePdf(lines) {
-    const textOperations = lines
-        .map((line, index) => {
-            const y = 760 - index * 20;
-            return `BT /F1 12 Tf 50 ${y} Td (${escapePdfText(line)}) Tj ET`;
-        })
-        .join('\n');
-
-    const stream = `${textOperations}\n`;
-
-    const objects = [
-        '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
-        '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
-        '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>\nendobj\n',
-        `4 0 obj\n<< /Length ${Buffer.byteLength(stream, 'utf8')} >>\nstream\n${stream}endstream\nendobj\n`,
-        '5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n'
-    ];
-
-    let pdf = '%PDF-1.4\n';
-    const offsets = [0];
-
-    for (const objectText of objects) {
-        offsets.push(Buffer.byteLength(pdf, 'utf8'));
-        pdf += objectText;
+function mapErrorToStatusCode(message) {
+    if (message === 'Payload too large') {
+        return 413;
     }
 
-    const xrefOffset = Buffer.byteLength(pdf, 'utf8');
-
-    pdf += `xref\n0 ${objects.length + 1}\n`;
-    pdf += '0000000000 65535 f \n';
-
-    for (let index = 1; index <= objects.length; index += 1) {
-        pdf += `${String(offsets[index]).padStart(10, '0')} 00000 n \n`;
+    if (message === 'Invalid JSON payload') {
+        return 400;
     }
 
-    pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+    if (message.startsWith('Invalid report payload')) {
+        return 400;
+    }
 
-    return Buffer.from(pdf, 'utf8');
+    if (message.startsWith('OPENAI_API_KEY is not configured')) {
+        return 500;
+    }
+
+    if (message.startsWith('OpenAI request failed')) {
+        return 502;
+    }
+
+    return 500;
 }
 
-function buildPlaceholderReportPdf(payload) {
-    const payloadKeys = payload && typeof payload === 'object' ? Object.keys(payload).slice(0, 10) : [];
-    const keysText = payloadKeys.length > 0 ? payloadKeys.join(', ') : 'none';
+function getContractHint() {
+    return {
+        acceptedInputShapes: [
+            'Request body as RoiCalculationInput directly',
+            '{ "calculationInput": RoiCalculationInput }',
+            '{ "input": RoiCalculationInput }'
+        ],
+        optionalOutputShapes: ['{ "calculationResult": RoiCalculationResult }', '{ "result": RoiCalculationResult }'],
+        requiredFields: [
+            'investment.equipmentCost',
+            'labour.fteReduced',
+            'labour.fullyLoadedAnnualCostPerFte',
+            'financial.timeHorizonYears'
+        ],
+        optionalContextShape: {
+            reportContext: {
+                objective: 'string',
+                audience: 'string',
+                constraints: 'string',
+                additionalContext: 'string'
+            }
+        }
+    };
+}
 
-    const lines = [
-        'ROI Report Placeholder',
-        `Generated at: ${new Date().toISOString()}`,
-        `Payload keys: ${keysText}`,
-        'Replace this endpoint with LLM-powered report generation.'
-    ];
+async function buildReportFromPayload(payload) {
+    const { errors, contract } = buildReportContractFromPayload(payload);
 
-    return buildSimplePdf(lines);
+    if (errors.length > 0) {
+        const error = new Error(`Invalid report payload: ${errors.join(' ')}`);
+        error.details = errors;
+        throw error;
+    }
+
+    const reportText = await generateBusinessCaseReport(contract);
+    return { contract, reportText };
 }
 
 function buildPlaceholderGrants(queryParams) {
@@ -175,13 +182,42 @@ const server = http.createServer(async (request, response) => {
     if (method === 'POST' && pathname === '/api/reports/pdf') {
         try {
             const payload = await parseJsonBody(request, MAX_BODY_SIZE_BYTES);
-            const pdfBuffer = buildPlaceholderReportPdf(payload);
-            sendPdf(response, pdfBuffer, 'roi-report-placeholder.pdf');
+            const { contract, reportText } = await buildReportFromPayload(payload);
+            const pdfBuffer = buildBusinessCasePdf(reportText, contract.companyName);
+            sendPdf(response, pdfBuffer, 'roi-business-case-report.pdf');
             return;
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Unknown error';
-            const statusCode = message === 'Payload too large' ? 413 : 400;
-            sendJson(response, statusCode, { error: message });
+            const statusCode = mapErrorToStatusCode(message);
+            sendJson(response, statusCode, {
+                error: message,
+                details: error && typeof error === 'object' && 'details' in error ? error.details : undefined,
+                contractHint: statusCode === 400 ? getContractHint() : undefined
+            });
+            return;
+        }
+    }
+
+    if (method === 'POST' && pathname === '/api/reports/preview') {
+        try {
+            const payload = await parseJsonBody(request, MAX_BODY_SIZE_BYTES);
+            const { contract, reportText } = await buildReportFromPayload(payload);
+
+            sendJson(response, 200, {
+                companyName: contract.companyName,
+                calculationInput: contract.calculationInput,
+                calculationResult: contract.calculationResult,
+                reportText
+            });
+            return;
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            const statusCode = mapErrorToStatusCode(message);
+            sendJson(response, statusCode, {
+                error: message,
+                details: error && typeof error === 'object' && 'details' in error ? error.details : undefined,
+                contractHint: statusCode === 400 ? getContractHint() : undefined
+            });
             return;
         }
     }
@@ -193,7 +229,8 @@ const server = http.createServer(async (request, response) => {
 
     sendJson(response, 404, {
         error: 'Not Found',
-        message: 'Available endpoints: GET /health, POST /api/reports/pdf, GET /api/grants'
+        message:
+            'Available endpoints: GET /health, POST /api/reports/pdf, POST /api/reports/preview, GET /api/grants'
     });
 });
 

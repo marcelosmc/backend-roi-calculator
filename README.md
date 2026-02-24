@@ -1,9 +1,10 @@
 # backend-roi-calculator
 
-Minimal Node.js REST API placeholder service for:
+Node.js backend service for ROI reporting:
 
-- `POST /api/reports/pdf` - accepts calculation payload and returns a PDF file
-- `GET /api/grants` - returns placeholder grants information
+- `POST /api/reports/pdf` - builds ROI contract from calculator input/output, calls ChatGPT, returns PDF
+- `POST /api/reports/preview` - same flow, returns JSON report text for easier backend-only testing
+- `GET /api/grants` - placeholder grants data
 
 ## Run
 
@@ -13,37 +14,69 @@ npm run start
 
 Default port: `4000` (override with `PORT` env var).
 
-## Endpoints
+## Environment Variables
 
-### Health
-
-`GET /health`
-
-### Placeholder PDF report
-
-`POST /api/reports/pdf`
-
-Request body: any JSON for now.
-
-Returns: `application/pdf` (`roi-report-placeholder.pdf`).
-
-Example:
+Create a local secret file (not committed):
 
 ```bash
-curl -X POST http://localhost:4000/api/reports/pdf \
-  -H 'Content-Type: application/json' \
-  -d '{"option":"Robot","equipmentCost":100000}' \
-  --output roi-report.pdf
+cp .env.example .env.local
 ```
 
-### Placeholder grants
+Required for live LLM call:
 
-`GET /api/grants`
+- `OPENAI_API_KEY`
 
-Optional query params accepted for now and echoed as metadata (e.g. `industry`, `country`).
+Optional:
 
-Example:
+- `OPENAI_MODEL` (default: `gpt-4.1-mini`)
+- `REPORT_LLM_MODE=mock` for offline/mock report text generation
+
+## `/api/reports/pdf` Contract
+
+Accepted request shapes:
+
+1. Request body is `RoiCalculationInput` directly
+2. `{ "calculationInput": RoiCalculationInput }`
+3. `{ "input": RoiCalculationInput }`
+
+Optional additional fields:
+
+- `calculationResult` or `result` (`RoiCalculationResult`) for future iterations
+- `reportContext`:
+  - `objective`
+  - `audience`
+  - `constraints`
+  - `additionalContext`
+
+Required MVP fields:
+
+- `investment.equipmentCost`
+- `labour.fteReduced`
+- `labour.fullyLoadedAnnualCostPerFte`
+- `financial.timeHorizonYears`
+
+Company name is currently hardcoded in report generation as:
+
+- `Southern Manitoba Tech Conference`
+
+## Test Without Frontend
+
+Sample payload: `examples/report-request.json`
+
+Mock/full flow (recommended first):
 
 ```bash
-curl 'http://localhost:4000/api/grants?industry=manufacturing&country=US'
+npm run test:report
+```
+
+Live OpenAI flow:
+
+```bash
+npm run test:report:live
+```
+
+Preview text only (no PDF):
+
+```bash
+npm run test:report:preview
 ```

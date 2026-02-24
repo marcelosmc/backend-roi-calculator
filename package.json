@@ -6,7 +6,10 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "node --watch src/server.js"
+    "dev": "node --watch src/server.js",
+    "test:report": "node scripts/test-report.js --mock",
+    "test:report:live": "node scripts/test-report.js",
+    "test:report:preview": "node scripts/test-report.js --preview --mock"
   },
   "engines": {
     "node": ">=18"

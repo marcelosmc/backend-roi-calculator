@@ -1,0 +1,33 @@
+{
+  "calculationInput": {
+    "optionName": "Smart Registration Automation",
+    "investment": {
+      "equipmentCost": 95000,
+      "installationCost": 12000,
+      "integrationCost": 8000,
+      "trainingCost": 5000,
+      "grantPercent": 0.15
+    },
+    "labour": {
+      "fteReduced": 1.5,
+      "fullyLoadedAnnualCostPerFte": 78000
+    },
+    "annualSavings": {
+      "overtimeSavings": 10000,
+      "qualityWarrantySavings": 4000
+    },
+    "annualCosts": {
+      "maintenanceCost": 9000,
+      "softwareSubscription": 6000
+    },
+    "financial": {
+      "timeHorizonYears": 5,
+      "discountRate": 0.08
+    }
+  },
+  "reportContext": {
+    "objective": "Request approval for conference operations automation.",
+    "audience": "Internal investment committee",
+    "constraints": "Keep risk low and implementation under one quarter."
+  }
+}
