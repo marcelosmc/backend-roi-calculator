@@ -90,4 +90,12 @@ Optional query filters:
 
 - `country` (e.g. `CA`)
 - `region` (e.g. `MB` or `Federal`)
+- `status` (e.g. `open`, `closed`, `intake-window`, `intake-based`)
 - `industry` (simple text match)
+
+Each returned grant now includes:
+
+- `name`, `provider`, `status`, `summary`
+- `displayValue` (human-readable funding value)
+- `value` (flattened numeric values such as `maxAmountCad`, `costSharePercent`)
+- `calculationHint` (`grantAmount` and `grantPercent` in decimal for ROI calculation input)

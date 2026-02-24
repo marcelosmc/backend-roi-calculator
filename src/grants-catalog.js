@@ -137,6 +137,115 @@ function normalizeText(value) {
         .toLowerCase();
 }
 
+function numberOrNull(value) {
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function firstUrlOrNull(urls) {
+    return Array.isArray(urls) && urls.length > 0 ? urls[0] : null;
+}
+
+function toPercentDecimal(percent) {
+    const parsed = numberOrNull(percent);
+    if (parsed === null) {
+        return null;
+    }
+
+    return parsed / 100;
+}
+
+function deriveValueType(value) {
+    const hasAmount =
+        numberOrNull(value.maxAmount) !== null ||
+        numberOrNull(value.minAmount) !== null ||
+        numberOrNull(value.maxAmountPerEvent) !== null ||
+        numberOrNull(value.maxAmountPerTrainee) !== null ||
+        numberOrNull(value.maxAmountPerEmployerPerYear) !== null;
+    const hasPercent =
+        numberOrNull(value.costSharePercent) !== null ||
+        numberOrNull(value.costSharePercentMin) !== null ||
+        numberOrNull(value.costSharePercentMax) !== null;
+
+    if (hasAmount && hasPercent) {
+        return 'amount_and_percent';
+    }
+
+    if (hasPercent) {
+        return 'percent';
+    }
+
+    if (hasAmount) {
+        return 'amount';
+    }
+
+    return 'unknown';
+}
+
+function buildDisplayValue(value) {
+    if (typeof value.summary === 'string' && value.summary.trim()) {
+        return value.summary.trim();
+    }
+
+    const maxAmount = numberOrNull(value.maxAmount);
+    const costSharePercent = numberOrNull(value.costSharePercent);
+    if (maxAmount !== null && costSharePercent !== null) {
+        return `Up to ${costSharePercent}% and up to CAD ${maxAmount.toLocaleString('en-CA')}`;
+    }
+
+    if (maxAmount !== null) {
+        return `Up to CAD ${maxAmount.toLocaleString('en-CA')}`;
+    }
+
+    if (costSharePercent !== null) {
+        return `Up to ${costSharePercent}% of eligible costs`;
+    }
+
+    return 'Value varies by program.';
+}
+
+function toFrontendGrant(grant) {
+    const value = grant.value || {};
+    const costSharePercentMin = numberOrNull(value.costSharePercentMin);
+    const costSharePercentMax = numberOrNull(value.costSharePercentMax);
+    const costSharePercentSingle = numberOrNull(value.costSharePercent);
+    const effectivePercentForCalculation =
+        costSharePercentSingle ?? costSharePercentMin ?? costSharePercentMax ?? null;
+    const maxAmount = numberOrNull(value.maxAmount);
+
+    return {
+        id: grant.id,
+        name: grant.name,
+        provider: grant.provider,
+        jurisdiction: grant.jurisdiction,
+        country: grant.country,
+        status: grant.status,
+        programType: grant.programType,
+        summary: grant.summary,
+        displayValue: buildDisplayValue(value),
+        valueType: deriveValueType(value),
+        value: {
+            currency: value.currency || 'CAD',
+            minAmountCad: numberOrNull(value.minAmount),
+            maxAmountCad: maxAmount,
+            maxAmountPerEventCad: numberOrNull(value.maxAmountPerEvent),
+            maxAmountPerTraineeCad: numberOrNull(value.maxAmountPerTrainee),
+            maxAmountPerEmployerPerYearCad: numberOrNull(value.maxAmountPerEmployerPerYear),
+            costSharePercent: costSharePercentSingle,
+            costSharePercentMin,
+            costSharePercentMax
+        },
+        calculationHint: {
+            grantAmount: maxAmount,
+            grantPercent:
+                effectivePercentForCalculation === null ? null : toPercentDecimal(effectivePercentForCalculation)
+        },
+        sourceUrl: firstUrlOrNull(grant.sourceUrls),
+        sourceUrls: Array.isArray(grant.sourceUrls) ? grant.sourceUrls : [],
+        intakeWindow: grant.intakeWindow || null,
+        lastVerifiedAt: grant.lastVerifiedAt || null
+    };
+}
+
 function uniqueByName(grants) {
     const seen = new Set();
     const unique = [];
@@ -181,6 +290,11 @@ function matchesFilter(grant, filters) {
         }
     }
 
+    const status = normalizeText(filters.status);
+    if (status && normalizeText(grant.status) !== status) {
+        return false;
+    }
+
     return true;
 }
 
@@ -189,16 +303,20 @@ function buildHardcodedGrantsResponse(queryParams) {
         industry: queryParams.get('industry') || null,
         country: queryParams.get('country') || null,
         region: queryParams.get('region') || null,
+        status: queryParams.get('status') || null,
         companySize: queryParams.get('companySize') || null
     };
 
-    const filtered = uniqueByName(HARDCODED_GRANTS).filter((grant) => matchesFilter(grant, filtersReceived));
+    const filtered = uniqueByName(HARDCODED_GRANTS)
+        .filter((grant) => matchesFilter(grant, filtersReceived))
+        .map((grant) => toFrontendGrant(grant));
 
     return {
         generatedAt: new Date().toISOString(),
         catalogVersion: GRANTS_CATALOG_VERSION,
         source: 'hardcoded-catalog',
         filtersReceived,
+        total: filtered.length,
         grants: filtered
     };
 }
