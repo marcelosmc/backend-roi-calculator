@@ -106,7 +106,9 @@ function formatTimestampForReportFilename(date) {
         '-',
         pad2(date.getHours()),
         ':',
-        pad2(date.getMinutes())
+        pad2(date.getMinutes()),
+        ':',
+        pad2(date.getSeconds())
     ].join('');
 }
 
